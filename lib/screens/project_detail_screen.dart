@@ -7,6 +7,8 @@ import 'package:mix_me_app/screens/create_review_screen.dart';
 import 'package:open_file/open_file.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:timeago/timeago.dart' as timeago;
+import 'package:flutter/foundation.dart'; // <<< 1. ДОБАВЬТЕ ЭТОТ ИМПОРТ ДЛЯ kIsWeb
+import 'package:url_launcher/url_launcher.dart'; // <<< 2. ДОБАВЬТЕ ЭТОТ ИМПОРТ
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 class ProjectDetailScreen extends StatefulWidget {
@@ -143,7 +145,21 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
   }
 
   Future<void> _downloadAndOpenFile(String storagePath, String fileName) async {
-      try {
+    try {
+      // ПРОВЕРЯЕМ, ЗАПУЩЕНО ЛИ ПРИЛОЖЕНИЕ В БРАУЗЕРЕ
+      if (kIsWeb) {
+        // --- ЛОГИКА ДЛЯ ВЕБА ---
+        // Получаем прямую публичную ссылку для скачивания
+        final url = supabase.storage.from('project-files').getPublicUrl(storagePath);
+        
+        // Используем url_launcher, чтобы открыть ссылку.
+        // Браузер сам поймет, что это файл, и начнет скачивание.
+        if (!await launchUrl(Uri.parse(url), webOnlyWindowName: '_blank')) {
+          throw 'Could not launch $url';
+        }
+
+      } else {
+        // --- СТАРАЯ ЛОГИКА ДЛЯ МОБИЛЬНЫХ УСТРОЙСТВ ---
         final dir = await getApplicationDocumentsDirectory();
         final localPath = '${dir.path}/$fileName';
         
@@ -160,12 +176,13 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
         if (result.type != ResultType.done) {
           _showError('Не удалось открыть файл: ${result.message}');
         }
-      } on StorageException catch (e) {
-          _showError('Ошибка скачивания: ${e.message}');
-      } catch (e) {
-        _showError('Произошла ошибка: $e');
       }
-  }
+    } on StorageException catch (e) {
+        _showError('Ошибка скачивания: ${e.message}');
+    } catch (e) {
+      _showError('Произошла ошибка: $e');
+    }
+  } 
 
   Future<void> _updateOrderStatus(String newStatus) async {
     try {

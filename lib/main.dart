@@ -1,10 +1,9 @@
-// lib/main.dart
-
 import 'package:flutter/material.dart';
+import 'package:flutter/gestures.dart'; // <<< 1. ДОБАВЬТЕ ЭТОТ ИМПОРТ
 import 'package:mix_me_app/screens/main_screen.dart';
 import 'package:mix_me_app/screens/welcome_screen.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
-import 'package:intl/date_symbol_data_local.dart'; // <<< ДОБАВЬТЕ ЭТОТ ИМПОРТ
+import 'package:intl/date_symbol_data_local.dart';
 
 
 const kPrimaryPink = Color(0xFFE91E63);
@@ -12,9 +11,20 @@ const kBackground = Color(0xFF212121);
 const kLightPink = Color(0xFFFCE4EC);
 const kGlassyColor = Color.fromRGBO(255, 255, 255, 0.1);
 
+// <<< 2. ДОБАВЬТЕ ЭТОТ КЛАСС ПЕРЕД MyApp >>>
+// Этот класс-помощник говорит Flutter разрешить перетаскивание мышью
+// для всех скроллящихся виджетов.
+class MyCustomScrollBehavior extends MaterialScrollBehavior {
+  @override
+  Set<PointerDeviceKind> get dragDevices => {
+        PointerDeviceKind.touch,
+        PointerDeviceKind.mouse,
+      };
+}
+
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  await initializeDateFormatting('ru_RU', null); // <<< ДОБАВЬТЕ ЭТУ СТРОКУ
+  await initializeDateFormatting('ru_RU', null);
   await Supabase.initialize(
     url: 'https://qbkhlferjxojfxotyzsq.supabase.co',
     anonKey: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InFia2hsZmVyanhvamZ4b3R5enNxIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTc1ODQ3MzgsImV4cCI6MjA3MzE2MDczOH0.Kg-mIuu-d4BpVvKyUA4fuGbnoGQZXC0yqvoJWi9TRl0',
@@ -32,6 +42,8 @@ class MyApp extends StatelessWidget {
     return MaterialApp(
       debugShowCheckedModeBanner: false,
       title: 'MixMe',
+      // <<< 3. ДОБАВЬТЕ ЭТУ СТРОЧКУ >>>
+      scrollBehavior: MyCustomScrollBehavior(),
       theme: ThemeData.dark().copyWith(
         scaffoldBackgroundColor: kBackground,
         primaryColor: kPrimaryPink,
