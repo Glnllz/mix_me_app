@@ -153,10 +153,16 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
     }
   }
 
-  Future<void> _refreshPortfolio() async {
+   Future<void> _refreshPortfolio() async {
      try {
        final userId = supabase.auth.currentUser!.id;
-       final response = await supabase.from('portfolios').select().eq('engineer_id', userId).order('created_at', ascending: false);
+       // <<< НАЧАЛО ИЗМЕНЕНИЯ: МЕНЯЕМ 'created_at' НА 'uploaded_at' >>>
+       final response = await supabase
+           .from('portfolios')
+           .select()
+           .eq('engineer_id', userId)
+           .order('uploaded_at', ascending: false); // Вот это место
+       // <<< КОНЕЦ ИЗМЕНЕНИЯ >>>
        if(mounted) {
          setState(() {
            _portfolioItems = List<Map<String, dynamic>>.from(response);

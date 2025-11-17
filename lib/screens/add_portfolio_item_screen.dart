@@ -1,7 +1,7 @@
-// lib/screens/add_portfolio_item_screen.dart
-
 import 'dart:io';
+import 'dart:typed_data'; // <<< ДОБАВЛЕН ИМПОРТ
 import 'package:file_picker/file_picker.dart';
+import 'package:flutter/foundation.dart'; // <<< ДОБАВЛЕН ИМПОРТ
 import 'package:flutter/material.dart';
 import 'package:mix_me_app/main.dart';
 import 'package:mix_me_app/widgets/background_glow.dart';
@@ -18,10 +18,10 @@ class _AddPortfolioItemScreenState extends State<AddPortfolioItemScreen> {
   final _titleController = TextEditingController();
   final _descriptionController = TextEditingController();
 
-  File? _beforeAudioFile;
-  String? _beforeAudioFileName;
-  File? _afterAudioFile;
-  String? _afterAudioFileName;
+  // <<< НАЧАЛО ИЗМЕНЕНИЯ: МЕНЯЕМ ТИП ХРАНЕНИЯ ФАЙЛОВ >>>
+  PlatformFile? _beforeAudioFile;
+  PlatformFile? _afterAudioFile;
+  // <<< КОНЕЦ ИЗМЕНЕНИЯ >>>
 
   bool _isLoading = false;
 
@@ -34,15 +34,17 @@ class _AddPortfolioItemScreenState extends State<AddPortfolioItemScreen> {
 
   Future<void> _pickAudio(bool isBefore) async {
     try {
-      final result = await FilePicker.platform.pickFiles(type: FileType.audio);
-      if (result != null && result.files.single.path != null) {
+      // <<< ИЗМЕНЕНИЕ: ПРОСИМ ЗАГРУЖАТЬ БАЙТЫ >>>
+      final result = await FilePicker.platform.pickFiles(
+        type: FileType.audio,
+        withData: true,
+      );
+      if (result != null) {
         setState(() {
           if (isBefore) {
-            _beforeAudioFile = File(result.files.single.path!);
-            _beforeAudioFileName = result.files.single.name;
+            _beforeAudioFile = result.files.single;
           } else {
-            _afterAudioFile = File(result.files.single.path!);
-            _afterAudioFileName = result.files.single.name;
+            _afterAudioFile = result.files.single;
           }
         });
       }
@@ -64,15 +66,31 @@ class _AddPortfolioItemScreenState extends State<AddPortfolioItemScreen> {
       final userId = supabase.auth.currentUser!.id;
 
       // --- Загрузка файла "до" ---
-      final beforeExt = _beforeAudioFileName!.split('.').last;
+      final beforeExt = _beforeAudioFile!.name.split('.').last;
       final beforePath = '$userId/${DateTime.now().millisecondsSinceEpoch}_before.$beforeExt';
-      await supabase.storage.from('portfolio-audio').upload(beforePath, _beforeAudioFile!);
+      
+      // <<< НАЧАЛО ИЗМЕНЕНИЯ: УМНАЯ ЗАГРУЗКА >>>
+      if (kIsWeb) {
+        await supabase.storage.from('portfolio-audio').uploadBinary(beforePath, _beforeAudioFile!.bytes!);
+      } else {
+        await supabase.storage.from('portfolio-audio').upload(beforePath, File(_beforeAudioFile!.path!));
+      }
+      // <<< КОНЕЦ ИЗМЕНЕНИЯ >>>
+      
       final beforeUrl = supabase.storage.from('portfolio-audio').getPublicUrl(beforePath);
 
       // --- Загрузка файла "после" ---
-      final afterExt = _afterAudioFileName!.split('.').last;
+      final afterExt = _afterAudioFile!.name.split('.').last;
       final afterPath = '$userId/${DateTime.now().millisecondsSinceEpoch}_after.$afterExt';
-      await supabase.storage.from('portfolio-audio').upload(afterPath, _afterAudioFile!);
+      
+      // <<< НАЧАЛО ИЗМЕНЕНИЯ: УМНАЯ ЗАГРУЗКА >>>
+      if (kIsWeb) {
+        await supabase.storage.from('portfolio-audio').uploadBinary(afterPath, _afterAudioFile!.bytes!);
+      } else {
+        await supabase.storage.from('portfolio-audio').upload(afterPath, File(_afterAudioFile!.path!));
+      }
+      // <<< КОНЕЦ ИЗМЕНЕНИЯ >>>
+      
       final afterUrl = supabase.storage.from('portfolio-audio').getPublicUrl(afterPath);
 
       // --- Сохранение ссылок в базу данных ---
@@ -86,7 +104,7 @@ class _AddPortfolioItemScreenState extends State<AddPortfolioItemScreen> {
 
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Работа успешно добавлена в портфолио!'), backgroundColor: Colors.green));
-        Navigator.of(context).pop(true); // Возвращаем true, чтобы обновить предыдущий экран
+        Navigator.of(context).pop(true);
       }
     } catch (e) {
       if (mounted) {
@@ -129,7 +147,8 @@ class _AddPortfolioItemScreenState extends State<AddPortfolioItemScreen> {
                     child: ListTile(
                       leading: Icon(Icons.mic_off_outlined, color: _beforeAudioFile != null ? Colors.orange : Colors.grey),
                       title: const Text('Аудио "ДО"'),
-                      subtitle: Text(_beforeAudioFileName ?? 'Файл не выбран', maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(color: _beforeAudioFile != null ? Colors.white : Colors.grey)),
+                      // <<< ИЗМЕНЕНИЕ: ИСПОЛЬЗУЕМ .name >>>
+                      subtitle: Text(_beforeAudioFile?.name ?? 'Файл не выбран', maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(color: _beforeAudioFile != null ? Colors.white : Colors.grey)),
                       trailing: const Icon(Icons.upload_file),
                       onTap: () => _pickAudio(true),
                     ),
@@ -140,7 +159,8 @@ class _AddPortfolioItemScreenState extends State<AddPortfolioItemScreen> {
                     child: ListTile(
                       leading: Icon(Icons.mic_outlined, color: _afterAudioFile != null ? Colors.greenAccent : Colors.grey),
                       title: const Text('Аудио "ПОСЛЕ"'),
-                      subtitle: Text(_afterAudioFileName ?? 'Файл не выбран', maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(color: _afterAudioFile != null ? Colors.white : Colors.grey)),
+                      // <<< ИЗМЕНЕНИЕ: ИСПОЛЬЗУЕМ .name >>>
+                      subtitle: Text(_afterAudioFile?.name ?? 'Файл не выбран', maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(color: _afterAudioFile != null ? Colors.white : Colors.grey)),
                       trailing: const Icon(Icons.upload_file),
                       onTap: () => _pickAudio(false),
                     ),
