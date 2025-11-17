@@ -797,6 +797,14 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "3.7.1"
+  translit:
+    dependency: "direct main"
+    description:
+      name: translit
+      sha256: a976051cc93752cb259077d20d2a0e921075fdcd58b07ea55d8c5bbc3496c349
+      url: "https://pub.dev"
+    source: hosted
+    version: "2.0.2"
   typed_data:
     dependency: transitive
     description:

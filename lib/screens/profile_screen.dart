@@ -84,6 +84,60 @@ class _ProfileScreenState extends State<ProfileScreen> {
     });
   }
 
+  void _showServicesToOrder(List<Map<String, dynamic>> services, Map<String, dynamic> engineerProfile) {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.grey[900],
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (context) {
+        return Container(
+          padding: const EdgeInsets.all(16),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text('Выберите услугу для заказа', style: Theme.of(context).textTheme.titleLarge),
+              const SizedBox(height: 16),
+              if (services.isEmpty)
+                const Padding(
+                  padding: EdgeInsets.symmetric(vertical: 24.0),
+                  child: Center(child: Text('У этого инженера пока нет добавленных услуг.')),
+                )
+              else
+                Flexible( // Используем Flexible, чтобы список занимал доступное место
+                  child: ListView.builder(
+                    shrinkWrap: true,
+                    itemCount: services.length,
+                    itemBuilder: (context, index) {
+                      final service = services[index];
+                      return ListTile(
+                        title: Text(service['name']),
+                        subtitle: Text('${service['price']} ₽'),
+                        trailing: const Icon(Icons.arrow_forward_ios, size: 16),
+                        onTap: () {
+                          // Закрываем BottomSheet
+                          Navigator.of(context).pop();
+                          // Переходим на экран создания заказа с выбранной услугой
+                          Navigator.of(context).push(MaterialPageRoute(
+                            builder: (context) => CreateOrderScreen(
+                              engineerProfile: engineerProfile,
+                              serviceData: service,
+                            ),
+                          ));
+                        },
+                      );
+                    },
+                  ),
+                ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -168,7 +222,10 @@ class _ProfileScreenState extends State<ProfileScreen> {
                          child: ElevatedButton.icon(
                           icon: const Icon(Icons.shopping_bag_outlined),
                           label: const Text('Заказать'),
-                          onPressed: () { /* TODO: Логика создания заказа */ },
+                          onPressed: () {
+                            // Вызываем новую функцию, передавая ей список услуг и профиль
+                            _showServicesToOrder(services, profile);
+                          },
                           style: ElevatedButton.styleFrom(backgroundColor: Colors.green, padding: const EdgeInsets.symmetric(vertical: 16)),
                         ),
                       ),
@@ -222,15 +279,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
                     ),
                   ),
                   const SizedBox(height: 16),
-                  if (services.isNotEmpty && !_isOwnProfile) ...[
-                    ProfileInfoCard(
-                      title: 'Услуги инженера',
-                      engineerProfile: profile,
-                      services: services,
-                      child: const SizedBox.shrink(),
-                    ),
-                    const SizedBox(height: 16),
-                  ],
                   if (reviews.isNotEmpty) ...[
                     GestureDetector(
                       onTap: () => Navigator.of(context).push(MaterialPageRoute(builder: (context) => ReviewsScreen(userId: profile['id'], userName: displayName))),
@@ -286,7 +334,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
       children: [
         CircleAvatar(
           radius: 40,
-          backgroundColor: kPrimaryPink,
+          backgroundColor: Colors.pinkAccent,
           backgroundImage: avatarUrl != null ? NetworkImage(avatarUrl) : null,
           child: avatarUrl == null && displayName.isNotEmpty ? Text(displayName[0].toUpperCase(), style: const TextStyle(fontSize: 32, color: Colors.white)) : null,
         ),
@@ -333,55 +381,15 @@ class _ProfileScreenState extends State<ProfileScreen> {
 class ProfileInfoCard extends StatelessWidget {
   final String title;
   final Widget child;
-  final List<Map<String, dynamic>>? services;
-  final Map<String, dynamic>? engineerProfile;
 
   const ProfileInfoCard({
     super.key,
     required this.title,
     required this.child,
-    this.services,
-    this.engineerProfile,
   });
 
   @override
   Widget build(BuildContext context) {
-    if ((title == 'Мои услуги' || title == 'Услуги инженера') && services != null && engineerProfile != null) {
-      return Container(
-        padding: const EdgeInsets.all(16),
-        decoration: BoxDecoration(color: Colors.grey.shade800.withOpacity(0.8), borderRadius: BorderRadius.circular(16)),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(title, style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
-            const Divider(height: 24, color: Colors.white12),
-            ListView.separated(
-              itemCount: services!.length,
-              shrinkWrap: true,
-              physics: const NeverScrollableScrollPhysics(),
-              itemBuilder: (context, index) {
-                final service = services![index];
-                return ListTile(
-                  contentPadding: EdgeInsets.zero,
-                  leading: const Icon(Icons.music_note_outlined, color: kPrimaryPink),
-                  title: Text(service['name'], style: const TextStyle(fontWeight: FontWeight.bold)),
-                  subtitle: Text('${service['price']} ₽', style: TextStyle(color: Colors.grey[300])),
-                  trailing: ElevatedButton(
-                    onPressed: () {
-                      Navigator.of(context).push(MaterialPageRoute(builder: (context) => CreateOrderScreen(engineerProfile: engineerProfile!, serviceData: service)));
-                    },
-                    style: ElevatedButton.styleFrom(padding: const EdgeInsets.symmetric(horizontal: 16), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10))),
-                    child: const Text('Заказать'),
-                  ),
-                );
-              },
-              separatorBuilder: (context, index) => const Divider(color: Colors.white12),
-            ),
-          ],
-        ),
-      );
-    }
-    
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(color: Colors.grey.shade800.withOpacity(0.8), borderRadius: BorderRadius.circular(16)),
@@ -473,7 +481,7 @@ class _PortfolioItemCardState extends State<PortfolioItemCard> {
 
             Widget buildButtonChild(String url, bool isPrimary) {
               if ((processingState == ProcessingState.loading || processingState == ProcessingState.buffering) && _currentlyPlayingUrl == url) {
-                return SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2, color: isPrimary ? Colors.white : kPrimaryPink));
+                return SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2, color: isPrimary ? Colors.white : Theme.of(context).colorScheme.primary));
               }
               return Text(isPrimary ? 'После' : 'До');
             }

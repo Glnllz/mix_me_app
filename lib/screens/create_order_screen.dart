@@ -1,12 +1,13 @@
-// lib/screens/create_order_screen.dart
-
 import 'dart:io';
+import 'dart:typed_data';
 import 'package:file_picker/file_picker.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:mix_me_app/main.dart';
 import 'package:mix_me_app/screens/main_screen.dart';
 import 'package:mix_me_app/widgets/background_glow.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:translit/translit.dart'; // <<< 1. ДОБАВЬТЕ ЭТОТ ИМПОРТ
 
 class CreateOrderScreen extends StatefulWidget {
   final Map<String, dynamic> engineerProfile;
@@ -27,8 +28,8 @@ class _CreateOrderScreenState extends State<CreateOrderScreen> {
   final _requirementsController = TextEditingController();
   bool _isLoading = false;
 
-  List<File> _pickedFiles = [];
-  List<String> _pickedFileNames = [];
+  List<PlatformFile> _pickedFiles = [];
+  final _translit = Translit(); // <<< 2. СОЗДАЙТЕ ЭКЗЕМПЛЯР ТРАНСЛИТЕРАТОРА
 
   @override
   void dispose() {
@@ -41,17 +42,21 @@ class _CreateOrderScreenState extends State<CreateOrderScreen> {
       final result = await FilePicker.platform.pickFiles(
         allowMultiple: true,
         type: FileType.any,
+        withData: true,
       );
       if (result != null) {
         setState(() {
-          _pickedFiles = result.paths.map((path) => File(path!)).toList();
-          _pickedFileNames = result.names.map((name) => name!).toList();
+          _pickedFiles.addAll(result.files);
         });
       }
     } catch (e) {
       _showError('Ошибка выбора файлов: $e');
     }
   }
+
+  // lib/screens/create_order_screen.dart
+
+// ... (внутри класса _CreateOrderScreenState)
 
   Future<void> _submitOrder() async {
     if (!_formKey.currentState!.validate()) return;
@@ -73,38 +78,46 @@ class _CreateOrderScreenState extends State<CreateOrderScreen> {
       final orderId = orderResponse.first['id'];
 
       if (_pickedFiles.isNotEmpty) {
-        for (int i = 0; i < _pickedFiles.length; i++) {
-          final file = _pickedFiles[i];
-          final fileName = _pickedFileNames[i];
+        for (final file in _pickedFiles) {
+          final originalFileName = file.name;
           
-          // --- ИСПРАВЛЕНИЕ ---
-          String fileExt = 'bin'; // Тип по умолчанию, если нет расширения
-          if (fileName.contains('.')) {
-              fileExt = fileName.split('.').last.toLowerCase();
-              if (fileExt.length > 10) { // Обрезаем слишком длинные расширения
-                  fileExt = fileExt.substring(0, 10);
-              }
+          // <<< НАЧАЛО ИСПРАВЛЕНИЯ >>>
+          // ВОЗВРАЩАЕМ НА МЕСТО ЛОГИКУ ОПРЕДЕЛЕНИЯ РАСШИРЕНИЯ
+          String fileExt = 'bin'; // Тип по умолчанию
+          if (originalFileName.contains('.')) {
+              fileExt = originalFileName.split('.').last.toLowerCase();
           }
-          // --- КОНЕЦ ИСПРАВЛЕНИЯ ---
+          // <<< КОНЕЦ ИСПРАВЛЕНИЯ >>>
+          
+          final transliteratedName = _translit.toTranslit(source: originalFileName);
+          final safeFileName = transliteratedName
+              .toLowerCase()
+              .replaceAll(RegExp(r'\s+'), '_')
+              .replaceAll(RegExp(r'[^a-z0-9._-]'), '');
+          
+          final storagePath = '$orderId/${DateTime.now().millisecondsSinceEpoch}_$safeFileName';
 
-          final storagePath = '$orderId/${DateTime.now().millisecondsSinceEpoch}.$fileExt';
-
-          await supabase.storage.from('project-files').upload(
-                storagePath,
-                file,
-                fileOptions: FileOptions(
-                  upsert: false,
-                  metadata: {'order_id': orderId},
-                ),
-              );
+          if (kIsWeb) {
+            await supabase.storage.from('project-files').uploadBinary(
+                  storagePath,
+                  file.bytes!,
+                  fileOptions: const FileOptions(upsert: false),
+                );
+          } else {
+            await supabase.storage.from('project-files').upload(
+                  storagePath,
+                  File(file.path!),
+                  fileOptions: const FileOptions(upsert: false),
+                );
+          }
           
           final fileUrl = supabase.storage.from('project-files').getPublicUrl(storagePath);
 
           await supabase.from('order_files').insert({
             'order_id': orderId,
             'uploader_id': customerId,
-            'file_name': fileName,
-            'file_type': fileExt, // Используем исправленное расширение
+            'file_name': originalFileName,
+            'file_type': fileExt, // <<< ТЕПЕРЬ ЭТА ПЕРЕМЕННАЯ СНОВА СУЩЕСТВУЕТ
             'file_url': fileUrl,
             'storage_path': storagePath,
           });
@@ -196,20 +209,18 @@ class _CreateOrderScreenState extends State<CreateOrderScreen> {
                   const Text('Файлы проекта', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
                   const SizedBox(height: 12),
                   if (_pickedFiles.isNotEmpty)
-                    ..._pickedFileNames.map((name) => Card(
+                    ..._pickedFiles.map((file) => Card(
                           color: Colors.grey.shade800,
                           margin: const EdgeInsets.only(bottom: 8),
                           child: ListTile(
                             dense: true,
                             leading: const Icon(Icons.insert_drive_file_outlined, color: Colors.white70),
-                            title: Text(name, overflow: TextOverflow.ellipsis),
+                            title: Text(file.name, overflow: TextOverflow.ellipsis),
                             trailing: IconButton(
                               icon: const Icon(Icons.close, size: 18, color: Colors.redAccent),
                               onPressed: () {
-                                final index = _pickedFileNames.indexOf(name);
                                 setState(() {
-                                  _pickedFiles.removeAt(index);
-                                  _pickedFileNames.removeAt(index);
+                                  _pickedFiles.remove(file);
                                 });
                               },
                             ),

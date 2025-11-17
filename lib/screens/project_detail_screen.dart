@@ -7,9 +7,11 @@ import 'package:mix_me_app/screens/create_review_screen.dart';
 import 'package:open_file/open_file.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:timeago/timeago.dart' as timeago;
-import 'package:flutter/foundation.dart'; // <<< 1. ДОБАВЬТЕ ЭТОТ ИМПОРТ ДЛЯ kIsWeb
-import 'package:url_launcher/url_launcher.dart'; // <<< 2. ДОБАВЬТЕ ЭТОТ ИМПОРТ
+import 'package:flutter/foundation.dart';
+import 'package:url_launcher/url_launcher.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+// <<< ДОБАВЛЕНЫ НОВЫЕ ИМПОРТЫ >>>
+import 'package:translit/translit.dart';
 
 class ProjectDetailScreen extends StatefulWidget {
   final Map<String, dynamic> projectData;
@@ -27,6 +29,9 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
   late final String _orderId;
   late final String _currentUserId;
   bool _isUploading = false;
+  
+  // <<< ДОБАВЛЯЕМ ЭКЗЕМПЛЯР ТРАНСЛИТЕРАТОРА >>>
+  final _translit = Translit();
 
   @override
   void initState() {
@@ -78,54 +83,74 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
     }
   }
 
+  // <<< ЗАМЕНЕНА ПОЛНАЯ ФУНКЦИЯ >>>
   Future<void> _pickAndSendFile() async {
-    final result = await FilePicker.platform.pickFiles(type: FileType.any);
-    if (result == null || result.files.single.path == null) return;
+    final result = await FilePicker.platform.pickFiles(
+      type: FileType.any,
+      withData: true,
+    );
+
+    if (result == null) return;
 
     setState(() => _isUploading = true);
     try {
-      final file = File(result.files.single.path!);
-      final fileName = result.files.single.name;
+      final file = result.files.single;
+      final originalFileName = file.name;
       
       String fileExt = 'bin';
-      if (fileName.contains('.')) {
-          fileExt = fileName.split('.').last.toLowerCase();
-          if (fileExt.length > 10) {
-              fileExt = fileExt.substring(0, 10);
-          }
+      if (originalFileName.contains('.')) {
+          fileExt = originalFileName.split('.').last.toLowerCase();
       }
 
-      final storagePath = '$_orderId/chat/${DateTime.now().millisecondsSinceEpoch}.$fileExt';
+      // <<< НАЧАЛО ИЗМЕНЕНИЙ: КОПИРУЕМ ЛОГИКУ ОЧИСТКИ ИМЕНИ >>>
+      final transliteratedName = _translit.toTranslit(source: originalFileName);
+      final safeFileName = transliteratedName
+          .toLowerCase()
+          .replaceAll(RegExp(r'\s+'), '_') // Заменяем пробелы на '_'
+          .replaceAll(RegExp(r'[^a-z0-9._-]'), ''); // Удаляем все остальное
+      
+      final storagePath = '$_orderId/chat/${DateTime.now().millisecondsSinceEpoch}_$safeFileName';
+      // <<< КОНЕЦ ИЗМЕНЕНИЙ >>>
 
-      await supabase.storage.from('project-files').upload(
-            storagePath,
-            file,
-            fileOptions: const FileOptions(
-              upsert: false,
-            ),
-          );
+      if (kIsWeb) {
+        await supabase.storage.from('project-files').uploadBinary(
+              storagePath,
+              file.bytes!,
+              fileOptions: const FileOptions(upsert: false),
+            );
+      } else {
+        await supabase.storage.from('project-files').upload(
+              storagePath,
+              File(file.path!),
+              fileOptions: const FileOptions(upsert: false),
+            );
+      }
+
       final fileUrl = supabase.storage.from('project-files').getPublicUrl(storagePath);
       
+      // В базу данных сохраняем ОРИГИНАЛЬНОЕ имя
       await supabase.from('order_files').insert({
           'order_id': _orderId,
           'uploader_id': _currentUserId,
-          'file_name': fileName,
+          'file_name': originalFileName,
           'file_type': fileExt,
           'file_url': fileUrl,
           'storage_path': storagePath,
       });
 
+      // И в чат тоже передаем ОРИГИНАЛЬНОЕ имя
       await supabase.from('messages').insert({
         'order_id': _orderId,
         'sender_id': _currentUserId,
-        'content': 'файл: $fileName',
+        'content': 'Прикреплен файл: $originalFileName',
         'file_url': fileUrl,
-        'file_name': fileName,
+        'file_name': originalFileName,
       });
 
       setState(() {
         _filesFuture = _fetchFiles();
       });
+
     } catch (e) {
       debugPrint('*** ОШИБКА ЗАГРУЗКИ ФАЙЛА В ЧАТЕ: $e');
       _showError('Ошибка загрузки файла: $e');
@@ -135,6 +160,7 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
       }
     }
   }
+
 
   void _showError(String message) {
     if (mounted) {
@@ -396,56 +422,52 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
     );
   }
   
-  // Внутри _ProjectDetailScreenState в файле lib/screens/project_detail_screen.dart
+  Widget _buildChatView() {
+    return StreamBuilder<List<Map<String, dynamic>>>(
+      stream: _messagesStream,
+      builder: (context, snapshot) {
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return const Center(child: CircularProgressIndicator());
+        }
+        if (snapshot.hasError) {
+          return Center(child: Text('Ошибка загрузки сообщений: ${snapshot.error}'));
+        }
+        final messages = snapshot.data ?? [];
+        if (messages.isEmpty) {
+          return const Center(child: Text('Сообщений пока нет. Начните диалог!'));
+        }
 
-Widget _buildChatView() {
-  return StreamBuilder<List<Map<String, dynamic>>>(
-    stream: _messagesStream,
-    builder: (context, snapshot) {
-      if (snapshot.connectionState == ConnectionState.waiting) {
-        return const Center(child: CircularProgressIndicator());
-      }
-      if (snapshot.hasError) {
-        return Center(child: Text('Ошибка загрузки сообщений: ${snapshot.error}'));
-      }
-      final messages = snapshot.data ?? [];
-      if (messages.isEmpty) {
-        return const Center(child: Text('Сообщений пока нет. Начните диалог!'));
-      }
+        return ListView.builder(
+          padding: const EdgeInsets.all(12),
+          itemCount: messages.length,
+          itemBuilder: (context, index) {
+            final message = messages[index];
+            final isMe = message['sender_id'] == _currentUserId;
 
-      return ListView.builder(
-        padding: const EdgeInsets.all(12),
-        // reverse: true, // <<< УБЕРИТЕ ИЛИ ЗАКОММЕНТИРУЙТЕ ЭТУ СТРОКУ
-        itemCount: messages.length,
-        itemBuilder: (context, index) {
-          final message = messages[index];
-          final isMe = message['sender_id'] == _currentUserId;
+            if (message['file_url'] != null) {
+              return FileBubble(
+                fileName: message['file_name'],
+                fileUrl: message['file_url'],
+                sentAt: DateTime.parse(message['sent_at']),
+                isMe: isMe,
+                onTap: () {
+                  final bucketUrl = supabase.storage.from('project-files').getPublicUrl('');
+                  final storagePath = (message['file_url'] as String).replaceFirst(bucketUrl, '');
+                  _downloadAndOpenFile(storagePath, message['file_name']);
+                },
+              );
+            }
 
-          // ... остальной код itemBuilder без изменений
-          if (message['file_url'] != null) {
-            return FileBubble(
-              fileName: message['file_name'],
-              fileUrl: message['file_url'],
+            return MessageBubble(
+              content: message['content'],
               sentAt: DateTime.parse(message['sent_at']),
               isMe: isMe,
-              onTap: () {
-                final bucketUrl = supabase.storage.from('project-files').getPublicUrl('');
-                final storagePath = (message['file_url'] as String).replaceFirst(bucketUrl, '');
-                _downloadAndOpenFile(storagePath, message['file_name']);
-              },
             );
-          }
-
-          return MessageBubble(
-            content: message['content'],
-            sentAt: DateTime.parse(message['sent_at']),
-            isMe: isMe,
-          );
-        },
-      );
-    },
-  );
-}
+          },
+        );
+      },
+    );
+  }
 
   Widget _buildMessageInputBar() {
     return SafeArea(

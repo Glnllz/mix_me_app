@@ -1,8 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:mix_me_app/main.dart';
 import 'package:mix_me_app/screens/forgot_password_screen.dart';
-import 'package:mix_me_app/screens/main_screen.dart'; // Наш новый главный экран с навигацией
-import 'package:mix_me_app/screens/signup_screen.dart';
+import 'package:mix_me_app/screens/main_screen.dart';
 import 'package:mix_me_app/widgets/background_glow.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
@@ -18,6 +17,10 @@ class _LoginScreenState extends State<LoginScreen> {
   bool _isLoading = false;
   final _emailController = TextEditingController();
   final _passwordController = TextEditingController();
+  
+  // <<< НАЧАЛО ИЗМЕНЕНИЙ >>>
+  bool _obscurePassword = true; 
+  // <<< КОНЕЦ ИЗМЕНЕНИЙ >>>
 
   void _showSnackBar(String message, {bool isError = true}) {
     ScaffoldMessenger.of(context).showSnackBar(
@@ -29,7 +32,10 @@ class _LoginScreenState extends State<LoginScreen> {
   }
 
   Future<void> _signIn() async {
-    if (!_formKey.currentState!.validate()) return;
+    // <<< ИЗМЕНЕНИЕ: ВЫЗЫВАЕМ ВАЛИДАЦИЮ >>>
+    if (!_formKey.currentState!.validate()) {
+      return;
+    }
 
     setState(() => _isLoading = true);
 
@@ -46,7 +52,12 @@ class _LoginScreenState extends State<LoginScreen> {
         );
       }
     } on AuthException catch (error) {
-      _showSnackBar(error.message);
+      // <<< ИЗМЕНЕНИЕ: БОЛЕЕ ПОНЯТНЫЕ ОШИБКИ >>>
+      if (error.message.contains('Invalid login credentials')) {
+        _showSnackBar('Неверный email или пароль');
+      } else {
+        _showSnackBar(error.message);
+      }
     } catch (error) {
       _showSnackBar('Произошла непредвиденная ошибка');
     }
@@ -84,10 +95,7 @@ class _LoginScreenState extends State<LoginScreen> {
                       const Text(
                         'Рады видеть вас снова',
                         textAlign: TextAlign.center,
-                        style: TextStyle(
-                            fontSize: 26,
-                            fontWeight: FontWeight.bold,
-                            color: Colors.white),
+                        style: TextStyle(fontSize: 26, fontWeight: FontWeight.bold, color: Colors.white),
                       ),
                       const SizedBox(height: 30),
                       TextFormField(
@@ -95,6 +103,7 @@ class _LoginScreenState extends State<LoginScreen> {
                         style: const TextStyle(color: Colors.black, fontWeight: FontWeight.bold),
                         decoration: InputDecoration(
                           hintText: 'Email',
+                          prefixIcon: const Icon(Icons.email_outlined, color: Colors.grey),
                           suffixIcon: IconButton(
                             icon: const Icon(Icons.clear, color: Colors.grey),
                             onPressed: () => _emailController.clear(),
@@ -102,7 +111,10 @@ class _LoginScreenState extends State<LoginScreen> {
                         ),
                         keyboardType: TextInputType.emailAddress,
                         validator: (value) {
-                          if (value == null || !value.contains('@')) {
+                          if (value == null || value.trim().isEmpty) {
+                            return 'Пожалуйста, введите email';
+                          }
+                          if (!value.contains('@') || !value.contains('.')) {
                             return 'Введите корректный email';
                           }
                           return null;
@@ -111,9 +123,24 @@ class _LoginScreenState extends State<LoginScreen> {
                       const SizedBox(height: 16),
                       TextFormField(
                         controller: _passwordController,
-                        obscureText: true,
+                        // <<< ИЗМЕНЕНИЕ: УПРАВЛЕНИЕ ВИДИМОСТЬЮ ПАРОЛЯ >>>
+                        obscureText: _obscurePassword,
                         style: const TextStyle(color: Colors.black, fontWeight: FontWeight.bold),
-                        decoration: const InputDecoration(hintText: 'Пароль'),
+                        decoration: InputDecoration(
+                          hintText: 'Пароль',
+                          prefixIcon: const Icon(Icons.lock_outline, color: Colors.grey),
+                          suffixIcon: IconButton(
+                            icon: Icon(
+                              _obscurePassword ? Icons.visibility_off : Icons.visibility,
+                              color: Colors.grey,
+                            ),
+                            onPressed: () {
+                              setState(() {
+                                _obscurePassword = !_obscurePassword;
+                              });
+                            },
+                          )
+                        ),
                          validator: (value) {
                           if (value == null || value.isEmpty) {
                             return 'Пожалуйста, введите пароль';
@@ -141,8 +168,6 @@ class _LoginScreenState extends State<LoginScreen> {
                       const SizedBox(height: 16),
                       TextButton(
                         onPressed: () {
-                           // Предполагаем, что для регистрации нужно вернуться на WelcomeScreen, чтобы выбрать роль
-                           // Если у вас отдельная кнопка регистрации, можно вести сразу на SignUpScreen
                            Navigator.of(context).pop();
                         },
                         child: const Text('Нет аккаунта? Зарегистрироваться', style: TextStyle(color: Colors.white, fontSize: 16)),

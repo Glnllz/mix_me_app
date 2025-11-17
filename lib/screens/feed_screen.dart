@@ -28,7 +28,7 @@ class _FeedScreenState extends State<FeedScreen> {
     try {
       final userId = supabase.auth.currentUser!.id;
       final profileResponse = await supabase.from('profiles').select('role').eq('id', userId).single();
-      
+
       _currentUserId = userId;
       _currentUserRole = profileResponse['role'] ?? 'customer';
 
@@ -43,14 +43,15 @@ class _FeedScreenState extends State<FeedScreen> {
   }
 
   Future<List<Map<String, dynamic>>> _fetchPosts() async {
+    // <<< ИЗМЕНЕНИЕ: ДОБАВЛЯЕМ avatar_url В ЗАПРОС >>>
     final response = await supabase
         .from('posts')
-        .select('*, profiles(id, username, role)')
+        .select('*, profiles(id, username, role, avatar_url)')
         .order('created_at', ascending: false);
     
     return response as List<Map<String, dynamic>>;
   }
-  
+
   void _refreshFeed() {
     setState(() {
       _postsFuture = _loadInitialDataAndFetchPosts();
@@ -139,12 +140,7 @@ class FeedPostCard extends StatefulWidget {
   final String currentUserId;
   final String currentUserRole;
 
-  const FeedPostCard({
-    super.key, 
-    required this.postData,
-    required this.currentUserId,
-    required this.currentUserRole
-  });
+  const FeedPostCard({super.key, required this.postData, required this.currentUserId, required this.currentUserRole});
 
   @override
   State<FeedPostCard> createState() => _FeedPostCardState();
@@ -153,9 +149,6 @@ class FeedPostCard extends StatefulWidget {
 class _FeedPostCardState extends State<FeedPostCard> {
   bool _isLoading = false;
 
-  // <<< НАЧАЛО ИЗМЕНЕНИЙ >>>
-
-  // Эта функция будет показывать диалог и возвращать введенную цену
   Future<int?> _showPriceProposalDialog() async {
     final formKey = GlobalKey<FormState>();
     final priceController = TextEditingController();
@@ -171,9 +164,10 @@ class _FeedPostCardState extends State<FeedPostCard> {
             child: TextFormField(
               controller: priceController,
               autofocus: true,
-              style: const TextStyle(color: Colors.black),
+              style: const TextStyle(color: Colors.white), // Изменено для темной темы
               decoration: const InputDecoration(
                 hintText: 'Введите стоимость в ₽',
+                hintStyle: TextStyle(color: Colors.grey),
                 prefixIcon: Icon(Icons.currency_ruble, color: Colors.grey),
               ),
               keyboardType: TextInputType.number,
@@ -190,14 +184,14 @@ class _FeedPostCardState extends State<FeedPostCard> {
           ),
           actions: [
             TextButton(
-              onPressed: () => Navigator.of(context).pop(null), // Возвращаем null при отмене
+              onPressed: () => Navigator.of(context).pop(null),
               child: const Text('Отмена'),
             ),
             ElevatedButton(
               onPressed: () {
                 if (formKey.currentState!.validate()) {
                   final price = int.parse(priceController.text);
-                  Navigator.of(context).pop(price); // Возвращаем цену
+                  Navigator.of(context).pop(price);
                 }
               },
               child: const Text('Предложить'),
@@ -209,33 +203,28 @@ class _FeedPostCardState extends State<FeedPostCard> {
   }
 
   Future<void> _createOffer() async {
-    // 1. Сначала получаем цену от инженера через диалог
     final price = await _showPriceProposalDialog();
 
-    // 2. Если инженер отменил ввод (price == null), ничего не делаем
     if (price == null) return;
 
     setState(() => _isLoading = true);
 
     try {
       final postAuthorId = widget.postData['profiles']['id'];
-      
+
       if (postAuthorId == widget.currentUserId) {
-         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Нельзя предложить услуги самому себе.'), backgroundColor: Colors.orange)
-        );
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Нельзя предложить услуги самому себе.'), backgroundColor: Colors.orange));
         return;
       }
-      
-      // 3. Создаем заказ, теперь С УКАЗАНИЕМ ЦЕНЫ
+
       final orderResponse = await supabase.from('orders').insert({
         'customer_id': postAuthorId,
         'engineer_id': widget.currentUserId,
         'status': 'pending',
-        'price': price, // <<< ДОБАВЛЕНО ПОЛЕ ЦЕНЫ
+        'price': price,
         'requirements': 'Отклик на пост в ленте: "${widget.postData['content']}"'
       }).select('*, customer:profiles!customer_id(*), engineer:profiles!engineer_id(*)');
-      
+
       final newOrderData = orderResponse.first;
 
       if (mounted) {
@@ -243,21 +232,48 @@ class _FeedPostCardState extends State<FeedPostCard> {
           builder: (context) => ProjectDetailScreen(projectData: newOrderData),
         ));
       }
-
     } catch (e) {
-      if(mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Ошибка: $e'), backgroundColor: Colors.red)
-        );
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Ошибка: $e'), backgroundColor: Colors.red));
       }
     } finally {
-      if(mounted) {
+      if (mounted) {
         setState(() => _isLoading = false);
       }
     }
   }
 
-  // <<< КОНЕЦ ИЗМЕНЕНИЙ >>>
+  Future<void> _deletePost() async {
+    final postId = widget.postData['id'];
+
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Удалить пост?'),
+        content: const Text('Это действие нельзя будет отменить.'),
+        actions: [
+          TextButton(onPressed: () => Navigator.of(context).pop(false), child: const Text('Отмена')),
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(true),
+            child: const Text('Удалить', style: TextStyle(color: Colors.red)),
+          ),
+        ],
+      ),
+    );
+
+    if (confirm != true) return;
+
+    try {
+      await supabase.from('posts').delete().eq('id', postId);
+      context.findAncestorStateOfType<_FeedScreenState>()?._refreshFeed();
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Ошибка удаления: $e'), backgroundColor: Colors.red),
+        );
+      }
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -265,6 +281,7 @@ class _FeedPostCardState extends State<FeedPostCard> {
     if (authorProfile == null) return const SizedBox.shrink();
 
     final authorName = authorProfile['username'] ?? 'Аноним';
+    final authorAvatarUrl = authorProfile['avatar_url'] as String?; // <<< ДОБАВЛЕНО
     final authorRole = authorProfile['role'] ?? 'customer';
     final authorId = authorProfile['id'];
     final postText = widget.postData['content'] ?? '';
@@ -272,7 +289,7 @@ class _FeedPostCardState extends State<FeedPostCard> {
 
     final roleText = authorRole == 'engineer' ? 'Инженер' : 'Заказчик';
     final roleColor = authorRole == 'engineer' ? Colors.blueAccent : Colors.green;
-    
+
     Widget actionButton;
 
     if (_isLoading) {
@@ -283,23 +300,21 @@ class _FeedPostCardState extends State<FeedPostCard> {
           onPressed: _createOffer,
           child: const Text('Предложить услуги'),
         );
-      } 
-      else if (authorId != widget.currentUserId) {
+      } else if (authorId != widget.currentUserId) {
         actionButton = ElevatedButton(
           onPressed: () {
-             Navigator.of(context).push(MaterialPageRoute(
+            Navigator.of(context).push(MaterialPageRoute(
               builder: (context) => ProfileScreen(userId: authorId),
             ));
           },
           style: ElevatedButton.styleFrom(backgroundColor: kPrimaryPink.withOpacity(0.2)),
           child: const Text('Перейти в профиль'),
         );
-      }
-      else {
+      } else {
         actionButton = const SizedBox.shrink();
       }
     }
-    
+
     return Card(
       color: Colors.grey.shade800.withOpacity(0.8),
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
@@ -311,32 +326,42 @@ class _FeedPostCardState extends State<FeedPostCard> {
           children: [
             Row(
               children: [
+                // <<< НАЧАЛО ИЗМЕНЕНИЯ: ОБНОВЛЯЕМ CircleAvatar >>>
                 CircleAvatar(
                   radius: 24,
                   backgroundColor: kPrimaryPink,
-                  child: Text(authorName[0].toUpperCase(), style: const TextStyle(color: Colors.white, fontSize: 20)),
+                  backgroundImage: authorAvatarUrl != null ? NetworkImage(authorAvatarUrl) : null,
+                  child: authorAvatarUrl == null 
+                      ? Text(authorName.isNotEmpty ? authorName[0].toUpperCase() : '?', style: const TextStyle(color: Colors.white, fontSize: 20)) 
+                      : null,
                 ),
+                // <<< КОНЕЦ ИЗМЕНЕНИЯ >>>
                 const SizedBox(width: 12),
-                Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(authorName, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
-                    const SizedBox(height: 2),
-                    Row(
-                      children: [
-                        Text(timeago.format(createdAt, locale: 'ru'), style: TextStyle(color: Colors.grey[400], fontSize: 12)),
-                        const SizedBox(width: 8),
-                        Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                          decoration: BoxDecoration(
-                              color: roleColor,
-                              borderRadius: BorderRadius.circular(4)),
-                          child: Text(roleText, style: const TextStyle(fontSize: 10, color: Colors.white, fontWeight: FontWeight.bold)),
-                        )
-                      ],
-                    )
-                  ],
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(authorName, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+                      const SizedBox(height: 2),
+                      Row(
+                        children: [
+                          Text(timeago.format(createdAt, locale: 'ru'), style: TextStyle(color: Colors.grey[400], fontSize: 12)),
+                          const SizedBox(width: 8),
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                            decoration: BoxDecoration(color: roleColor, borderRadius: BorderRadius.circular(4)),
+                            child: Text(roleText, style: const TextStyle(fontSize: 10, color: Colors.white, fontWeight: FontWeight.bold)),
+                          )
+                        ],
+                      )
+                    ],
+                  ),
                 ),
+                if (authorId == widget.currentUserId)
+                  IconButton(
+                    icon: Icon(Icons.more_vert, color: Colors.grey[400]),
+                    onPressed: _deletePost,
+                  ),
               ],
             ),
             const SizedBox(height: 16),
@@ -344,10 +369,7 @@ class _FeedPostCardState extends State<FeedPostCard> {
             const SizedBox(height: 16),
             const Divider(color: Colors.white12),
             const SizedBox(height: 8),
-            SizedBox(
-              width: double.infinity,
-              child: actionButton
-            )
+            SizedBox(width: double.infinity, child: actionButton)
           ],
         ),
       ),
