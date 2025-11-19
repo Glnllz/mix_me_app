@@ -24,7 +24,6 @@ class _ProjectsScreenState extends State<ProjectsScreen> {
   }
 
   Future<void> _fetchProjects() async {
-    // Не показываем индикатор при обновлении, только при первой загрузке
     if (_allProjects.isEmpty) {
       setState(() => _isLoading = true);
     }

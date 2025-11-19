@@ -54,9 +54,6 @@ class _CreateOrderScreenState extends State<CreateOrderScreen> {
     }
   }
 
-  // lib/screens/create_order_screen.dart
-
-// ... (внутри класса _CreateOrderScreenState)
 
   Future<void> _submitOrder() async {
     if (!_formKey.currentState!.validate()) return;
@@ -81,13 +78,10 @@ class _CreateOrderScreenState extends State<CreateOrderScreen> {
         for (final file in _pickedFiles) {
           final originalFileName = file.name;
           
-          // <<< НАЧАЛО ИСПРАВЛЕНИЯ >>>
-          // ВОЗВРАЩАЕМ НА МЕСТО ЛОГИКУ ОПРЕДЕЛЕНИЯ РАСШИРЕНИЯ
-          String fileExt = 'bin'; // Тип по умолчанию
+          String fileExt = 'bin'; 
           if (originalFileName.contains('.')) {
               fileExt = originalFileName.split('.').last.toLowerCase();
           }
-          // <<< КОНЕЦ ИСПРАВЛЕНИЯ >>>
           
           final transliteratedName = _translit.toTranslit(source: originalFileName);
           final safeFileName = transliteratedName

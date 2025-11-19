@@ -11,9 +11,7 @@ const kBackground = Color(0xFF212121);
 const kLightPink = Color(0xFFFCE4EC);
 const kGlassyColor = Color.fromRGBO(255, 255, 255, 0.1);
 
-// <<< 2. ДОБАВЬТЕ ЭТОТ КЛАСС ПЕРЕД MyApp >>>
-// Этот класс-помощник говорит Flutter разрешить перетаскивание мышью
-// для всех скроллящихся виджетов.
+
 class MyCustomScrollBehavior extends MaterialScrollBehavior {
   @override
   Set<PointerDeviceKind> get dragDevices => {
@@ -42,7 +40,6 @@ class MyApp extends StatelessWidget {
     return MaterialApp(
       debugShowCheckedModeBanner: false,
       title: 'MixMe',
-      // <<< 3. ДОБАВЬТЕ ЭТУ СТРОЧКУ >>>
       scrollBehavior: MyCustomScrollBehavior(),
       theme: ThemeData.dark().copyWith(
         scaffoldBackgroundColor: kBackground,
